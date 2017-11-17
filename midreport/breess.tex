@@ -1,0 +1,56 @@
+\documentclass{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+
+\linespread{1.5}
+
+\title{CSCI 4969 Project 2 Mid Report}
+\author{Samuel Breese}
+\date{}
+
+\begin{document}
+\maketitle
+
+Our group did not accomplish much before the mid-report was due, but I will detail here what exploratory work I completed before the assignment was changed.
+We had planned to invest a significant amount of time into the project the day it was due (this was our method on Project 1, where it was fairly successful), but on that day the project was changed fundamentally.
+We were therefore faced with an interesting dilemma: in order to detail our significant progress on the former project in the mid report, we would need to do work backwards on the old project and then throw that work away for the new project.
+However, the situation was not as dire as I initially thought: I had done enough work meddling with the build system to have a reasonable amount to discuss.
+
+On Project 1, my teammate and I collaborated by sending patch files and test code back and forth via email, which was clunky and not conducive to quick and incremental development.
+For this project, a better approach was required, given the larger scope.
+To facilitate this, we turned to Git.
+For simplicity, we chose to host our Git repository on GitHub rather than on someone's machine or on a VPS\@.
+Some issues came up due to the size of the repository, but after a few tries some sort of caching seemed to kick in and everything worked.
+
+Beyond source control, I wanted to maintain a standardized build environment that could quickly and easily be brought up and down, rebuilt, configured, and patched.
+I wrote to some length about the virtualization setup/kernel configuration I was using to test kernel code, but for this assignment I decided to create scripts to abstract common operations, making workflow more cohesive and eliminating the need to consult reference material for more uncommon operations (i.e.\ properly generating and applying patches).
+This was further complicated by the necessity of configuration changes to run the kernel in such a minimal environment, the potential need to tweak configuration to complete assignment objectives, and the necessity of a full clean (deleting in-tree configuration) to generate patches.
+As an example, consider our team's Project 1 Part 2: in order to properly build, we required cryptography-related features enabled by several kernel configuration options.
+To properly reconfigure in this environment an out-of-tree backup and a way to update that backup are required, preferably using TUI tools like \texttt{make menuconfig} rather than just editting the configuration file.
+Although this is not a particularly difficult task, it requires a tedious amount of bookkeeping to do properly, and accidentally deleting the configuration is a hassle.
+Automation was the solution, so now our team's build environment will ensure that configuration is seamlessly updated and saved through patch generation.
+
+Another concern was maintaining consistent behavior across different host machines.
+The automation scripts will download and extract the right kernel version to the right directories without user input, but there is another potential version mismatch in QEMU\@.
+On my own host I am running a bleeding-edge version of QEMU, and apparently the older version in the Debian repositories has some issues that lead to incorrect execution.
+The problems seen here were very strange: the kernel would always boot, but \texttt{/bin/sh} would run correctly only about half of the time, seemingly at random.
+Our holdover solution was to run QEMU inside of a more up-to-date Ubuntu guest inside VirtualBox, which is less than ideal.
+In the future, I would like to fetch and build a working QEMU with the correct compilation options automatically.
+
+Moving into the kernel Makefiles, I did some reading into how to add additional files to the kernel build and was able to successfully compile my source into the kernel image.
+This proved to be as simple as adding \texttt{obj-y += file.o} to \texttt{kernel/Makefile}.
+I also messed with the configuration system a little, editing \texttt{kernel/Kconfig} to add a configuration option \texttt{CONFIG\_NETKERN} for whether to build my new file.
+From here, I could then change my line in the Makefile to \texttt{obj-\$(CONFIG\_NETKERN) += file.o} to conditionally build based on the configuration option.
+
+Finally, I tried moving a TCP-related function (namely \texttt{tcp\_sendmsg}) from \texttt{net/ipv4/tcp.c} to my new file.
+This appears to have worked perfectly after a few minor changes, mostly to the includes.
+I was able to build, install, and run the kernel, and inside the rebuilt kernel TCP worked fine (I was able to \texttt{wget} the Google homepage, at least).
+
+From this point, my plan was to copy all of the important TCP functions into another file, rename them, and then create a new layer 2 protocol structure dispatching to the new functions.
+I would then gradually replace functionality with simpler implementations once I had verified that the cloned protocol worked correctly.
+Unfortunately, we did not generate significant progress on this task before the assignment goals were changed, so no patch is available.
+However, you can view our GitHub repository with scripts within at \texttt{https://github.com/aweinstock314/breess\_weinsa\_netkern\_project2}.
+Hopefully this work on the build system and on modifying the kernel build constitutes sufficient progress, as we were unsure of how to proceed once the assignment changed.
+
+\end{document}
