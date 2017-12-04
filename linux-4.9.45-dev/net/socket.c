@@ -1672,6 +1672,16 @@ SYSCALL_DEFINE4(send, int, fd, void __user *, buff, size_t, len,
 }
 
 /*
+ *	Implementation for CSCI 4969 project 2.
+ */
+
+SYSCALL_DEFINE5(send_repeat, int, fd, void __user *, buff, size_t, len,
+				unsigned int, flags, unsigned int, n)
+{
+	return sys_sendto(fd, buff, len, flags, NULL, 0);
+}
+
+/*
  *	Receive a frame from the socket and optionally record the address of the
  *	sender. We verify the buffers are writable and if needed move the
  *	sender address from kernel to user space.

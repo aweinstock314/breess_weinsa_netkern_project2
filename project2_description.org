@@ -1,0 +1,93 @@
+* Plan B Overview
+** TCP Option pair
+*** TCP Repeat (i, n) - ith copy of this data, n copies expected, unique seq no.
+*** TCP Repeat Return (i, n) - kind of like an ACK in options
+** If the other end doesn't support this option, you shouldn't either
+** System call to invoke, looks like send but with an extra argument n which is how many times the data should be replicated
+** Data/retransmit queue should only have one copy of the data, you should be copying/making a new header for each of the n copies when sending
+** Receiver can receive the i copies of any order, but cannot deliver the next segment to application until all n copies of this packet are delivered
+** Not every pcket will have this option (can mix send() and our send_repeat() on one socket). If other side doesn't support, just treat as n = 1
+** Further details on Piazza under Resources
+
+* Plan B: Memory-Conscious TCP Repeat Option
+** TCP Repeat (high level)
+You should implement a new system call, send_repeat(), that takes all the arguments send() would, plus an additional unsigned int which we call n to be consistent with our notation for TCP Repeat.
+When this system call is made, the sender will send n copies of the buff using the TCP Repeat option.
+The receiver will use normal calls to receive the data (read / recv / recvfrom).
+
+A socket may choose to mix traditional send() and send_repeat() calls, for example to send the following sequence:
+
+#+begin_src
+Hello
+Five times
+Five times
+Five times
+Five times
+Five times
+Goodbye
+#+end_src
+
+The calls might look like
+
+#+begin_src c
+send(sockfd, "Hello", strlen("Hello"), 0);
+send_repeat(sockfd, "Five times", strlen("Five times"), 0, 5);
+send(sockfd, "Goodbye", strlen("Goodbye"), 0);
+#+end_src
+
+Since sys_send() calls sys_sendto() which already has 6 arguments, you might find it easiest to make a copy of sys_sendto() which is not a system call so that it can take more than 6 arguments, or to make a copy that still takes 6 arguments, but replace one of the last two arguments with n since they are NULL and 0 respectively when called by sys_send().
+
+** TCP Repeat Protocol Operation
+During the initial three-way handshakes, receiver should attach a TCP Repeat option (described below) with n set to 1.
+If the sender supports TCP Repeat, it should attach a TCP Repeat Return option (described below) on the SYNACK.
+The two ends can then be certain that the connection supports TCP Repeat.
+If either of these conditions is false, TCP Repeat will be considered unsupported for the connection, and any send_repeat() call will instead use the standard send() behavior (no TCP Repeat / TCP Repeat Return options should be attached in future packets on this connection).
+
+When a send_repeat() call is made, TCP will send the data n times.
+Each of the i times that it sends the data, it will attach a TCP Repeat Option to the header.
+This consists of the Option Kind Number 253, a length byte, and then i and n.
+To reduce network overhead, we will say the first 4 bytes of the option data is i, and the next 4 bytes of option data is n.
+This means the length of the option is 3.
+The counting for i starts at 1.
+You should ensure that sequence numbers are contiguous, i.e. that no data is sent in between the packet containing (1,n) and the packet containing (2,n).
+
+When a receiver that supports TCP Return receives a packet with a TCP Repeat Option, the corresponding ACK packet should have a TCP Repeat Return option attached with the corresponding i and n values.
+The TCP Repeat Return option looks the same as the TCP Repeat option, but the Option Kind is 254.
+
+The receiver should not pass data along to the application until all n copies are received.
+To support future options that may rely on a particular packet in the series, you must ensure that the receiver gets options containing (i, n) pairs (1, n), (2, n), .., (n - 1, n), (n, n).
+In other words if n is 5 and the receiver gets (1, 5) through (4, 5) and the sender retransmits (3, 5), the receiver must discard the duplicate packet and cannot deliver the data to the application until (5, 5) arrives.
+
+The normal rules about sequence numbers apply the receiver is welcome to hold onto any data as long as it has room.
+To avoid the problem of the receive window being too small, any TCP Repeat receiver should make any attampt to ensure its receive window is large enough to support all n copies of the data.
+It is possible that the receiver simply does not have enough room (especially for large n), in which case the data cannot be delivered to the application, but the remaining copies of the packet cannot be received.
+This will result in a slow and painful timeout/death for the connection, but is legal behavior.
+With any luck, this issue won't even come up.
+
+** TCP Repeat Internal Requirements
+To save memory on the sender side, you should never have duplicates of the data from a given send_repeat() call stored for sake of retransmission.
+Instead, for each packet that needs to be transmitted or retransmitted, a new header should be generated and used alongside the data (if we need to copy the data at transmission time, that's fine but it should be deferred to the last possible moment).
+You are welcome to use existing TCP functions and should implement TCP Repeat within the existing TCP structures/code.
+You can modify the tcp_sock and other structures as needed as well.
+
+A Wireshark/tcpdump/etc. trace should show the TCP Repeat and TCP Repeat Return headers where appropriate.
+
+** Writeup
+Your writeup should be at least 3 pages double-spaced (or 750 words) per group member.
+Code segments, screenshots, etc. do not count towards this length.
+Describe any design decisions you had to make, any difficulties you ran into, and explain any existing code that you copied to make your new functions.
+Similar to the original Project 2, you should explain these calls in-depth if they are non-trivial or more than 1 line.
+Once you hit the page limit you can explain code more briefly.
+
+The writeup should also contain any testing you did, and any traces that demonstrate your option in action.
+The testing should be explicit - if you did local testing, explain what was sent and how many times.
+If you did testing with a remote server, or doing something like a bulk transfer, you should explain exactly what you did and any difference in results.
+If you had a test case that "broke things" you should be explicit about what the results were (not just that "it didn't send all the data") - the Project 1 Peer reviews varied in detail but were still way too light on the explanation of testing in almost every case.
+
+** Full Project Submission to Submitty
+1. Full_report.pdf is the full report as described above. Do not put your name on the report.
+2. Full_patch.diff is your patch file for your full submission. Do not put your name in the code or EXTRAVERSION of the Makefile, but do pick an EXTRAVERSION that is unique with the same guidelines as the mid-report submission.
+3. Full_README should include a final division of labor (who did what, how much time everyone spent). Ideally, this division should be approximately equaul. It should also include any notes that you want the instructor to read that you wouldn't want a peer reviewer to read.
+
+* Implementation notes
+TCP option numbers are defined in <net/tcp.h>.
