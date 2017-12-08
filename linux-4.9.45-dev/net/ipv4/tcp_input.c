@@ -3824,7 +3824,7 @@ void tcp_parse_options(const struct sk_buff *skb,
 					}
 					opt_rx->snd_wscale = snd_wscale;
 				}
-				break;
+ break;
 			case TCPOPT_TIMESTAMP:
 				if ((opsize == TCPOLEN_TIMESTAMP) &&
 				    ((estab && opt_rx->tstamp_ok) ||
@@ -3857,23 +3857,29 @@ void tcp_parse_options(const struct sk_buff *skb,
 				 */
 				break;
 #endif
+			case TCPOPT_REPEAT:
+			case TCPOPT_REPEAT_RETURN:
+				if (opsize == 3) {
+					opt_rx->repeat_i = *(u8 *)ptr;
+				}
+				break;
 			case TCPOPT_FASTOPEN:
 				tcp_parse_fastopen_option(
 					opsize - TCPOLEN_FASTOPEN_BASE,
 					ptr, th->syn, foc, false);
 				break;
 
-			case TCPOPT_EXP:
-				/* Fast Open option shares code 254 using a
-				 * 16 bits magic number.
-				 */
-				if (opsize >= TCPOLEN_EXP_FASTOPEN_BASE &&
-				    get_unaligned_be16(ptr) ==
-				    TCPOPT_FASTOPEN_MAGIC)
-					tcp_parse_fastopen_option(opsize -
-						TCPOLEN_EXP_FASTOPEN_BASE,
-						ptr + 2, th->syn, foc, true);
-				break;
+//			case TCPOPT_EXP:
+//				/* Fast Open option shares code 254 using a
+//				 * 16 bits magic number.
+//				 */
+//				if (opsize >= TCPOLEN_EXP_FASTOPEN_BASE &&
+//				    get_unaligned_be16(ptr) ==
+//				    TCPOPT_FASTOPEN_MAGIC)
+//					tcp_parse_fastopen_option(opsize -
+//						TCPOLEN_EXP_FASTOPEN_BASE,
+//						ptr + 2, th->syn, foc, true);
+//				break;
 
 			}
 			ptr += opsize-2;

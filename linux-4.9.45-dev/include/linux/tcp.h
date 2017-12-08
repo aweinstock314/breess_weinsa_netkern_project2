@@ -104,6 +104,9 @@ struct tcp_options_received {
 	u8	num_sacks;	/* Number of SACK blocks		*/
 	u16	user_mss;	/* mss requested by user in ioctl	*/
 	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
+
+	u8  repeat_i : 4,
+	    repeat_n : 4;
 };
 
 static inline void tcp_clear_options(struct tcp_options_received *rx_opt)

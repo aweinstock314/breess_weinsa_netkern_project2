@@ -46,7 +46,7 @@ If either of these conditions is false, TCP Repeat will be considered unsupporte
 When a send_repeat() call is made, TCP will send the data n times.
 Each of the i times that it sends the data, it will attach a TCP Repeat Option to the header.
 This consists of the Option Kind Number 253, a length byte, and then i and n.
-To reduce network overhead, we will say the first 4 bytes of the option data is i, and the next 4 bytes of option data is n.
+To reduce network overhead, we will say the first 4 bits of the option data is i, and the next 4 bits of option data is n.
 This means the length of the option is 3.
 The counting for i starts at 1.
 You should ensure that sequence numbers are contiguous, i.e. that no data is sent in between the packet containing (1,n) and the packet containing (2,n).
@@ -90,4 +90,13 @@ If you had a test case that "broke things" you should be explicit about what the
 3. Full_README should include a final division of labor (who did what, how much time everyone spent). Ideally, this division should be approximately equaul. It should also include any notes that you want the instructor to read that you wouldn't want a peer reviewer to read.
 
 * Implementation notes
-TCP option numbers are defined in <net/tcp.h>.
+** DONE Define TCP option number in include/net/tcp.h
+CLOSED: [2017-12-05 Tue 15:46]
+** DONE Modify tcp_parse_options to recognize the option in net/ipv4/tcp_input.c on SYN/SYNACK
+CLOSED: [2017-12-08 Fri 15:00]
+It looks like we'll want to define TCPOLEN_REPEAT (or maybe just hardcode, it should always just be 8 bytes?)
+TCPOPT_REPEAT_RETURN seems to share option number 254 with TCPOPT_EXP; for now, let's comment that out of the option parsing switch.
+tcp_parse_option modifies the tcp_options_received struct within the tcp_sock in include/linux/tcp.h
+*** DONE Modify tcp_options_received struct to track whether TCP repeat is enabled.
+CLOSED: [2017-12-08 Fri 15:00]
+** TODO Research where to go from here; this probably involves modifying low-level TCP send/recv stuff.
