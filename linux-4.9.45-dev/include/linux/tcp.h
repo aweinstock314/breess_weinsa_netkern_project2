@@ -113,6 +113,7 @@ static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
 {
 	rx_opt->tstamp_ok = rx_opt->sack_ok = 0;
 	rx_opt->wscale_ok = rx_opt->snd_wscale = 0;
+	rx_opt->repeat_i = rx_opt->repeat_n = 0;
 }
 
 /* This is the max number of SACKS that we'll generate and process. It's safe
@@ -368,6 +369,9 @@ struct tcp_sock {
 	 */
 	struct request_sock *fastopen_rsk;
 	u32	*saved_syn;
+
+	u8 repeat_i : 4,
+	   repeat_n : 4;
 };
 
 enum tsq_flags {

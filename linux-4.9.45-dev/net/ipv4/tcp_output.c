@@ -418,6 +418,9 @@ static inline bool tcp_urg_mode(const struct tcp_sock *tp)
 #define OPTION_WSCALE		(1 << 3)
 #define OPTION_FAST_OPEN_COOKIE	(1 << 8)
 
+#define OPTION_REPEAT (1 << 4)
+#define OPTION_REPEAT_RETURN (1 << 5)
+
 struct tcp_out_options {
 	u16 options;		/* bit field of OPTION_* */
 	u16 mss;		/* 0 to disable */
@@ -426,6 +429,9 @@ struct tcp_out_options {
 	u8 hash_size;		/* bytes in hash_location */
 	__u8 *hash_location;	/* temporary pointer, overloaded */
 	__u32 tsval, tsecr;	/* need to include OPTION_TS */
+
+	u8 repeat_data; /* high 4 bits are i, low 4 bits are n */
+
 	struct tcp_fastopen_cookie *fastopen_cookie;	/* Fast open cookie */
 };
 
@@ -492,6 +498,13 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 			       opts->ws);
 	}
 
+	if (unlikely(OPTION_REPEAT & options || OPTION_REPEAT_RETURN & options)) {
+		*ptr++ = htonl((TCPOPT_NOP << 24) |
+					   ((OPTION_REPEAT & options ? TCPOPT_REPEAT : TCPOPT_REPEAT_RETURN) << 16) |
+					   (3 << 8) | // May need to change this to 4 due to the NOP padding, probably not though.
+					   opts->repeat_data);
+	}
+
 	if (unlikely(opts->num_sack_blocks)) {
 		struct tcp_sack_block *sp = tp->rx_opt.dsack ?
 			tp->duplicate_sack : tp->selective_acks;
@@ -548,6 +561,8 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 	unsigned int remaining = MAX_TCP_OPTION_SPACE;
 	struct tcp_fastopen_request *fastopen = tp->fastopen_req;
 
+	printk("Entering tcp_syn_options\n");
+
 #ifdef CONFIG_TCP_MD5SIG
 	*md5 = tp->af_specific->md5_lookup(sk, sk);
 	if (*md5) {
@@ -602,6 +617,12 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		}
 	}
 
+	if (tp->repeat_i != 0 && tp->repeat_n != 0) {
+		opts->options |= OPTION_REPEAT;
+		opts->repeat_data = (u8) tp->repeat_i;
+		remaining -= 4; // Need aligned length here, which is 4 (since we send a NOP first for alignment).
+	}
+
 	return MAX_TCP_OPTION_SPACE - remaining;
 }
 
@@ -613,7 +634,10 @@ static unsigned int tcp_synack_options(struct request_sock *req,
 				       struct tcp_fastopen_cookie *foc)
 {
 	struct inet_request_sock *ireq = inet_rsk(req);
+	struct tcp_sock *tp = tcp_sk(req->sk);
 	unsigned int remaining = MAX_TCP_OPTION_SPACE;
+
+	printk("Entering tcp_synack_options\n");
 
 #ifdef CONFIG_TCP_MD5SIG
 	if (md5) {
@@ -660,6 +684,12 @@ static unsigned int tcp_synack_options(struct request_sock *req,
 			opts->fastopen_cookie = foc;
 			remaining -= need;
 		}
+	}
+
+	if (tp->repeat_i != 0 && tp->repeat_n != 0) {
+		opts->options |= OPTION_REPEAT_RETURN;
+		opts->repeat_data = (u8) tp->repeat_i;
+		remaining -= 4; // Need aligned length here again.
 	}
 
 	return MAX_TCP_OPTION_SPACE - remaining;

@@ -3860,6 +3860,7 @@ void tcp_parse_options(const struct sk_buff *skb,
 			case TCPOPT_REPEAT:
 			case TCPOPT_REPEAT_RETURN:
 				if (opsize == 3) {
+					// We only have one byte, so no worries about endianness.
 					opt_rx->repeat_i = *(u8 *)ptr;
 				}
 				break;

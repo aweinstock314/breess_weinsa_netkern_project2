@@ -92,11 +92,23 @@ If you had a test case that "broke things" you should be explicit about what the
 * Implementation notes
 ** DONE Define TCP option number in include/net/tcp.h
 CLOSED: [2017-12-05 Tue 15:46]
-** DONE Modify tcp_parse_options to recognize the option in net/ipv4/tcp_input.c on SYN/SYNACK
+** DONE Modify tcp_parse_options to recognize the option in net/ipv4/tcp_input.c
 CLOSED: [2017-12-08 Fri 15:00]
+This handles the receiver side.
 It looks like we'll want to define TCPOLEN_REPEAT (or maybe just hardcode, it should always just be 8 bytes?)
 TCPOPT_REPEAT_RETURN seems to share option number 254 with TCPOPT_EXP; for now, let's comment that out of the option parsing switch.
 tcp_parse_option modifies the tcp_options_received struct within the tcp_sock in include/linux/tcp.h
 *** DONE Modify tcp_options_received struct to track whether TCP repeat is enabled.
 CLOSED: [2017-12-08 Fri 15:00]
-** TODO Research where to go from here; this probably involves modifying low-level TCP send/recv stuff.
+** DONE Modify tcp_syn_options and tcp_synack_options in net/ipv4/tcp_output.c
+CLOSED: [2017-12-09 Sat 16:03]
+This handles the sender side.
+*** DONE Change the tcp_out_options struct to track the repeat option.
+CLOSED: [2017-12-08 Fri 15:18]
+*** DONE Change tcp_options_write to write the option based on that struct
+CLOSED: [2017-12-08 Fri 15:30]
+*** DONE Change tcp_syn_options to initialize the tcp_out_options for repeat
+CLOSED: [2017-12-08 Fri 15:37]
+*** DONE Change tcp_synack_options to initialize the tcp_out_options for repeat
+CLOSED: [2017-12-09 Sat 16:03]
+This is probably going to be more annoying to test; wil probably just use the project 1 server.
