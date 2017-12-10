@@ -118,3 +118,7 @@ This causes tcp_syn_options to initialize the tcp_out_options with OPTION_REPEAT
 When sending, tcp_options_write reads the tcp_out_options and writes the 3 bytes of option data (padded with a single byte NOP option).
 The option data is sent across the network and eventually parsed by tcp_parse_options, which sets the tcp_options_received parameter.
 tcp_parse_options is called from tcp_conn_request, which is called from the version-specific tcp_v4_conn_request, which is stored in some dispatch structure.
+Looks like tcp_openreq_init writes data from the input options to the request_sock. 
+
+Overall, path seems to be:
+Set data on sock -> sock data written on SYN -> data read into request_sock -> request_sock data written on SYNACK

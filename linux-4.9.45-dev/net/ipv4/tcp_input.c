@@ -6214,6 +6214,7 @@ static void tcp_openreq_init(struct request_sock *req,
 			     struct sk_buff *skb, const struct sock *sk)
 {
 	struct inet_request_sock *ireq = inet_rsk(req);
+	struct tcp_request_sock *treq = tcp_rsk(req);
 
 	req->rsk_rcv_wnd = 0;		/* So that tcp_send_synack() knows! */
 	req->cookie_ts = 0;
@@ -6232,6 +6233,9 @@ static void tcp_openreq_init(struct request_sock *req,
 	ireq->ir_rmt_port = tcp_hdr(skb)->source;
 	ireq->ir_num = ntohs(tcp_hdr(skb)->dest);
 	ireq->ir_mark = inet_request_mark(sk, skb);
+
+	treq->repeat_i = rx_opt->repeat_i;
+	treq->repeat_n = rx_opt->repeat_n;
 }
 
 struct request_sock *inet_reqsk_alloc(const struct request_sock_ops *ops,
