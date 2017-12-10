@@ -430,7 +430,8 @@ struct tcp_out_options {
 	__u8 *hash_location;	/* temporary pointer, overloaded */
 	__u32 tsval, tsecr;	/* need to include OPTION_TS */
 
-	u8 repeat_data; /* high 4 bits are i, low 4 bits are n */
+	u8 repeat_i : 4,
+	   repeat_n : 4;
 
 	struct tcp_fastopen_cookie *fastopen_cookie;	/* Fast open cookie */
 };
@@ -502,7 +503,8 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 		*ptr++ = htonl((TCPOPT_NOP << 24) |
 					   ((OPTION_REPEAT & options ? TCPOPT_REPEAT : TCPOPT_REPEAT_RETURN) << 16) |
 					   (3 << 8) | // May need to change this to 4 due to the NOP padding, probably not though.
-					   opts->repeat_data);
+					   (opts->repeat_i << 4) |
+			           opts->repeat_n);
 	}
 
 	if (unlikely(opts->num_sack_blocks)) {
@@ -619,7 +621,8 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 
 	if (tp->repeat_i != 0 && tp->repeat_n != 0) {
 		opts->options |= OPTION_REPEAT;
-		opts->repeat_data = (u8) tp->repeat_i;
+		opts->repeat_i = tp->repeat_i;
+		opts->repeat_n = tp->repeat_n;
 		remaining -= 4; // Need aligned length here, which is 4 (since we send a NOP first for alignment).
 	}
 
@@ -653,33 +656,26 @@ static unsigned int tcp_synack_options(struct request_sock *req,
 	}
 #endif
 
-	printk("DEBUG in tcp_synack_options at " __FILE__ ":%d\n", __LINE__);
-
 	/* We always send an MSS option. */
 	opts->mss = mss;
 	remaining -= TCPOLEN_MSS_ALIGNED;
-
-	printk("DEBUG in tcp_synack_options at " __FILE__ ":%d\n", __LINE__);
 
 	if (likely(ireq->wscale_ok)) {
 		opts->ws = ireq->rcv_wscale;
 		opts->options |= OPTION_WSCALE;
 		remaining -= TCPOLEN_WSCALE_ALIGNED;
 	}
-	printk("DEBUG in tcp_synack_options at " __FILE__ ":%d\n", __LINE__);
 	if (likely(ireq->tstamp_ok)) {
 		opts->options |= OPTION_TS;
 		opts->tsval = tcp_skb_timestamp(skb);
 		opts->tsecr = req->ts_recent;
 		remaining -= TCPOLEN_TSTAMP_ALIGNED;
 	}
-	printk("DEBUG in tcp_synack_options at " __FILE__ ":%d\n", __LINE__);
 	if (likely(ireq->sack_ok)) {
 		opts->options |= OPTION_SACK_ADVERTISE;
 		if (unlikely(!ireq->tstamp_ok))
 			remaining -= TCPOLEN_SACKPERM_ALIGNED;
 	}
-	printk("DEBUG in tcp_synack_options at " __FILE__ ":%d\n", __LINE__);
 	if (foc != NULL && foc->len >= 0) {
 		u32 need = foc->len;
 
@@ -693,13 +689,12 @@ static unsigned int tcp_synack_options(struct request_sock *req,
 		}
 	}
 
-	printk("DEBUG in tcp_synack_options at " __FILE__ ":%d\n", __LINE__);
 	if (treq->repeat_i != 0 && treq->repeat_n != 0) {
 		opts->options |= OPTION_REPEAT_RETURN;
-		opts->repeat_data = (treq->repeat_i << 4) | treq->repeat_n;
+		opts->repeat_i = treq->repeat_i;
+		opts->repeat_n = treq->repeat_n;
 		remaining -= 4; // Need aligned length here again.
 	}
-	printk("DEBUG in tcp_synack_options at " __FILE__ ":%d\n", __LINE__);
 
 	return MAX_TCP_OPTION_SPACE - remaining;
 }
@@ -3132,17 +3127,11 @@ struct sk_buff *tcp_make_synack(const struct sock *sk, struct dst_entry *dst,
 #endif
 	skb_set_hash(skb, tcp_rsk(req)->txhash, PKT_HASH_TYPE_L4);
 
-	printk("DEBUG at " __FILE__ ":%d\n", __LINE__);
-
 	tcp_header_size = tcp_synack_options(req, mss, skb, &opts, md5, foc) +
 			  sizeof(*th);
 
-	printk("DEBUG at " __FILE__ ":%d\n", __LINE__);
-
 	skb_push(skb, tcp_header_size);
 	skb_reset_transport_header(skb);
-
-	printk("DEBUG at " __FILE__ ":%d\n", __LINE__);
 
 	th = (struct tcphdr *)skb->data;
 	memset(th, 0, sizeof(struct tcphdr));
@@ -3155,7 +3144,6 @@ struct sk_buff *tcp_make_synack(const struct sock *sk, struct dst_entry *dst,
 	 * not even correctly set)
 	 */
 
-	printk("DEBUG at " __FILE__ ":%d\n", __LINE__);
 	tcp_init_nondata_skb(skb, tcp_rsk(req)->snt_isn,
 			     TCPHDR_SYN | TCPHDR_ACK);
 
@@ -3163,15 +3151,11 @@ struct sk_buff *tcp_make_synack(const struct sock *sk, struct dst_entry *dst,
 	/* XXX data is queued and acked as is. No buffer/window check */
 	th->ack_seq = htonl(tcp_rsk(req)->rcv_nxt);
 
-	printk("DEBUG at " __FILE__ ":%d\n", __LINE__);
-
 	/* RFC1323: The window in SYN & SYN/ACK segments is never scaled. */
 	th->window = htons(min(req->rsk_rcv_wnd, 65535U));
 	tcp_options_write((__be32 *)(th + 1), NULL, &opts);
 	th->doff = (tcp_header_size >> 2);
 	__TCP_INC_STATS(sock_net(sk), TCP_MIB_OUTSEGS);
-
-	printk("DEBUG at " __FILE__ ":%d\n", __LINE__);
 
 #ifdef CONFIG_TCP_MD5SIG
 	/* Okay, we have all we need - do the md5 hash if needed */
@@ -3180,8 +3164,6 @@ struct sk_buff *tcp_make_synack(const struct sock *sk, struct dst_entry *dst,
 					       md5, req_to_sk(req), skb);
 	rcu_read_unlock();
 #endif
-
-	printk("DEBUG at " __FILE__ ":%d\n", __LINE__);
 
 	/* Do not fool tcpdump (if any), clean our debris */
 	skb->tstamp.tv64 = 0;
