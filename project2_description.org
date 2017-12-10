@@ -122,3 +122,10 @@ Looks like tcp_openreq_init writes data from the input options to the request_so
 
 Overall, path seems to be:
 Set data on sock -> sock data written on SYN -> data read into request_sock -> request_sock data written on SYNACK
+
+Question: best way to keep track of whether TCP_REPEAT is supported.
+Probably tracking i and n in the sock anyway, so maybe just make sure n is always nonzero?
+On the server side, how to get from request_sock to sock? request_sock.sk is null during SYNACK, I assume it is not set until connection is fully open.
+Looks like this can just be done in tcp_conn_request
+
+On the client side, the SYNACK options are parsed within tcp_rcv_synsent_state_process.

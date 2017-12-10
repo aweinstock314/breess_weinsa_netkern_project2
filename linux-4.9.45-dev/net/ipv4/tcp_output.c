@@ -629,7 +629,7 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 	*/
 	// Always send when repeat is supported
 	opts->options |= OPTION_REPEAT;
-	opts->repeat_i = 1;
+	opts->repeat_i = 0;
 	opts->repeat_n = 1;
 	remaining -= 4; // Need aligned length here, which is 4 (since we send a NOP first for alignment).
 
@@ -696,12 +696,11 @@ static unsigned int tcp_synack_options(struct request_sock *req,
 		}
 	}
 
-	printk("repeat_n is %d\n", treq->repeat_n);
-	if (treq->repeat_n == 1) {
+	if (treq->repeat_ok) {
 		printk("Sending back SYNACK. Client supports TCP_REPEAT\n");
 		opts->options |= OPTION_REPEAT_RETURN;
-		opts->repeat_i = treq->repeat_i;
-		opts->repeat_n = treq->repeat_n;
+		opts->repeat_i = 0;
+		opts->repeat_n = 1;
 		remaining -= 4; // Need aligned length here again.
 	}
 

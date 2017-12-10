@@ -3857,10 +3857,10 @@ void tcp_parse_options(const struct sk_buff *skb,
 				 */
 				break;
 #endif
-			case TCPOPT_REPEAT:
-				printk("REPEAT + "); 
 			case TCPOPT_REPEAT_RETURN:
-				printk("RETURN\n");
+				printk("RETURN + ");
+			case TCPOPT_REPEAT:
+				printk("REPEAT\n"); 
 				if (opsize == 3) {
 					// We only have one byte, so no worries about endianness.
 					opt_rx->repeat_i = *ptr >> 4;
@@ -3918,6 +3918,7 @@ static bool tcp_parse_aligned_timestamp(struct tcp_sock *tp, const struct tcphdr
 static bool tcp_fast_parse_options(const struct sk_buff *skb,
 				   const struct tcphdr *th, struct tcp_sock *tp)
 {
+	printk("FAST PARSE OPTIONS\n");
 	/* In the spirit of fast parsing, compare doff directly to constant
 	 * values.  Because equality is used, short doff can be ignored here.
 	 */
@@ -5624,6 +5625,8 @@ static bool tcp_rcv_fastopen_synack(struct sock *sk, struct sk_buff *synack,
 	struct sk_buff *data = tp->syn_data ? tcp_write_queue_head(sk) : NULL;
 	u16 mss = tp->rx_opt.mss_clamp, try_exp = 0;
 	bool syn_drop = false;
+	
+	printk("FASTOPEN SYNACK\n");
 
 	if (mss == tp->rx_opt.user_mss) {
 		struct tcp_options_received opt;
@@ -5684,9 +5687,16 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 	struct tcp_fastopen_cookie foc = { .len = -1 };
 	int saved_clamp = tp->rx_opt.mss_clamp;
 
+	printk("SYNSENT STATE PROCESS\n");
+
 	tcp_parse_options(skb, &tp->rx_opt, 0, &foc);
 	if (tp->rx_opt.saw_tstamp && tp->rx_opt.rcv_tsecr)
 		tp->rx_opt.rcv_tsecr -= tp->tsoffset;
+
+	if (tp->rx_opt.repeat_n == 1) {
+		tp->repeat_ok = true;
+		printk("Server supports repeat\n");
+	}
 
 	if (th->ack) {
 		/* rfc793:
@@ -6237,8 +6247,7 @@ static void tcp_openreq_init(struct request_sock *req,
 	ireq->ir_num = ntohs(tcp_hdr(skb)->dest);
 	ireq->ir_mark = inet_request_mark(sk, skb);
 
-	treq->repeat_i = rx_opt->repeat_i;
-	treq->repeat_n = rx_opt->repeat_n;
+	treq->repeat_ok = rx_opt->repeat_n == 1;
 }
 
 struct request_sock *inet_reqsk_alloc(const struct request_sock_ops *ops,
@@ -6328,6 +6337,8 @@ int tcp_conn_request(struct request_sock_ops *rsk_ops,
 	bool want_cookie = false;
 	struct flowi fl;
 
+	printk("CONN REQUEST\n");
+
 	/* TW buckets are converted to open requests without
 	 * limitations, they conserve resources and peer is
 	 * evidently real one.
@@ -6365,6 +6376,9 @@ int tcp_conn_request(struct request_sock_ops *rsk_ops,
 		tcp_clear_options(&tmp_opt);
 
 	tmp_opt.tstamp_ok = tmp_opt.saw_tstamp;
+	tcp_sk(sk)->repeat_ok = tmp_opt.repeat_n == 1;
+	tcp_sk(sk)->repeat_i = 0;
+	tcp_sk(sk)->repeat_n = 0;
 	tcp_openreq_init(req, &tmp_opt, skb, sk);
 	inet_rsk(req)->no_srccheck = inet_sk(sk)->transparent;
 
