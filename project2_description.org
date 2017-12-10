@@ -112,3 +112,9 @@ CLOSED: [2017-12-08 Fri 15:37]
 *** DONE Change tcp_synack_options to initialize the tcp_out_options for repeat
 CLOSED: [2017-12-09 Sat 16:03]
 This is probably going to be more annoying to test; wil probably just use the project 1 server.
+** Get a better idea of how our option data propagates across the handshake
+First, set repeat_i and repeat_n in the tcp_sock.
+This causes tcp_syn_options to initialize the tcp_out_options with OPTION_REPEAT and repeat_data.
+When sending, tcp_options_write reads the tcp_out_options and writes the 3 bytes of option data (padded with a single byte NOP option).
+The option data is sent across the network and eventually parsed by tcp_parse_options, which sets the tcp_options_received parameter.
+tcp_parse_options is called from tcp_conn_request, which is called from the version-specific tcp_v4_conn_request, which is stored in some dispatch structure.

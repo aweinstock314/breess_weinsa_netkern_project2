@@ -1678,7 +1678,21 @@ SYSCALL_DEFINE4(send, int, fd, void __user *, buff, size_t, len,
 SYSCALL_DEFINE5(send_repeat, int, fd, void __user *, buff, size_t, len,
 				unsigned int, flags, unsigned int, n)
 {
+	int err;
+	struct socket *sock;
+	struct tcp_sock *tp;
+	int fput_needed;
+
+	sock = sockfd_lookup_light(fd, &err, &fput_needed);
+	if (!sock)
+		goto out;
+	tp = tcp_sk(sock->sk);
+	tp->repeat_i = (u8) 1;
+	tp->repeat_n = (u8) n;
 	return sys_sendto(fd, buff, len, flags, NULL, 0);
+	
+out:
+	return err;
 }
 
 /*
