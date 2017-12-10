@@ -3858,10 +3858,13 @@ void tcp_parse_options(const struct sk_buff *skb,
 				break;
 #endif
 			case TCPOPT_REPEAT:
+				printk("REPEAT + "); 
 			case TCPOPT_REPEAT_RETURN:
+				printk("RETURN\n");
 				if (opsize == 3) {
 					// We only have one byte, so no worries about endianness.
-					opt_rx->repeat_i = *(u8 *)ptr;
+					opt_rx->repeat_i = *ptr >> 4;
+					opt_rx->repeat_n = (*ptr << 4) >> 4;
 				}
 				break;
 			case TCPOPT_FASTOPEN:
