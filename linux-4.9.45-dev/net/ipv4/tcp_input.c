@@ -5695,6 +5695,8 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 
 	if (tp->rx_opt.repeat_n == 1) {
 		tp->repeat_ok = true;
+		tp->repeat_i = 0;
+		tp->repeat_n = 0;
 		printk("Server supports repeat\n");
 	}
 

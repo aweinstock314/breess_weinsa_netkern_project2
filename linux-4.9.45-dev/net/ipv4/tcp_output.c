@@ -619,15 +619,7 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 		}
 	}
 
-	/*
-	if (tp->repeat_i != 0 && tp->repeat_n != 0) {
-		opts->options |= OPTION_REPEAT;
-		opts->repeat_i = tp->repeat_i;
-		opts->repeat_n = tp->repeat_n;
-		remaining -= 4; // Need aligned length here, which is 4 (since we send a NOP first for alignment).
-	}
-	*/
-	// Always send when repeat is supported
+	// Always send on SYN when repeat is supported
 	opts->options |= OPTION_REPEAT;
 	opts->repeat_i = 0;
 	opts->repeat_n = 1;
@@ -746,6 +738,14 @@ static unsigned int tcp_established_options(struct sock *sk, struct sk_buff *skb
 			      TCPOLEN_SACK_PERBLOCK);
 		size += TCPOLEN_SACK_BASE_ALIGNED +
 			opts->num_sack_blocks * TCPOLEN_SACK_PERBLOCK;
+	}
+
+	if (tp->repeat_ok && tp->repeat_i != 0 && tp->repeat_n != 0) {
+		printk("Sending on established options: i = %d, n = %d\n", tp->repeat_i, tp->repeat_n);
+		opts->options |= OPTION_REPEAT;
+		opts->repeat_i = tp->repeat_i;
+		opts->repeat_n = tp->repeat_n;
+		size += 4; // Aligned length again
 	}
 
 	return size;
@@ -1028,8 +1028,6 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			th->urg = 1;
 		}
 	}
-
-	tcp_options_write((__be32 *)(th + 1), tp, &opts);
 	skb_shinfo(skb)->gso_type = sk->sk_gso_type;
 	if (likely(!(tcb->tcp_flags & TCPHDR_SYN))) {
 		th->window      = htons(tcp_select_window(sk));
@@ -1040,49 +1038,67 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		 */
 		th->window	= htons(min(tp->rcv_wnd, 65535U));
 	}
+
+	do {
+		tcp_options_write((__be32 *)(th + 1), tp, &opts);
+
 #ifdef CONFIG_TCP_MD5SIG
-	/* Calculate the MD5 hash, as we have all we need now */
-	if (md5) {
-		sk_nocaps_add(sk, NETIF_F_GSO_MASK);
-		tp->af_specific->calc_md5_hash(opts.hash_location,
-					       md5, sk, skb);
-	}
+		/* Calculate the MD5 hash, as we have all we need now */
+		if (md5) {
+			sk_nocaps_add(sk, NETIF_F_GSO_MASK);
+			tp->af_specific->calc_md5_hash(opts.hash_location,
+										   md5, sk, skb);
+		}
 #endif
 
-	icsk->icsk_af_ops->send_check(sk, skb);
+		icsk->icsk_af_ops->send_check(sk, skb);
 
-	if (likely(tcb->tcp_flags & TCPHDR_ACK))
-		tcp_event_ack_sent(sk, tcp_skb_pcount(skb));
+		if (likely(tcb->tcp_flags & TCPHDR_ACK))
+			tcp_event_ack_sent(sk, tcp_skb_pcount(skb));
 
-	if (skb->len != tcp_header_size) {
-		tcp_event_data_sent(tp, sk);
-		tp->data_segs_out += tcp_skb_pcount(skb);
-	}
+		if (skb->len != tcp_header_size) {
+			tcp_event_data_sent(tp, sk);
+			tp->data_segs_out += tcp_skb_pcount(skb);
+		}
 
-	if (after(tcb->end_seq, tp->snd_nxt) || tcb->seq == tcb->end_seq)
-		TCP_ADD_STATS(sock_net(sk), TCP_MIB_OUTSEGS,
-			      tcp_skb_pcount(skb));
+		if (after(tcb->end_seq, tp->snd_nxt) || tcb->seq == tcb->end_seq)
+			TCP_ADD_STATS(sock_net(sk), TCP_MIB_OUTSEGS,
+						  tcp_skb_pcount(skb));
 
-	tp->segs_out += tcp_skb_pcount(skb);
-	/* OK, its time to fill skb_shinfo(skb)->gso_{segs|size} */
-	skb_shinfo(skb)->gso_segs = tcp_skb_pcount(skb);
-	skb_shinfo(skb)->gso_size = tcp_skb_mss(skb);
+		tp->segs_out += tcp_skb_pcount(skb);
+		/* OK, its time to fill skb_shinfo(skb)->gso_{segs|size} */
+		skb_shinfo(skb)->gso_segs = tcp_skb_pcount(skb);
+		skb_shinfo(skb)->gso_size = tcp_skb_mss(skb);
 
-	/* Our usage of tstamp should remain private */
-	skb->tstamp.tv64 = 0;
+		/* Our usage of tstamp should remain private */
+		skb->tstamp.tv64 = 0;
 
-	/* Cleanup our debris for IP stacks */
-	memset(skb->cb, 0, max(sizeof(struct inet_skb_parm),
-			       sizeof(struct inet6_skb_parm)));
+		/* Cleanup our debris for IP stacks */
+		memset(skb->cb, 0, max(sizeof(struct inet_skb_parm),
+							   sizeof(struct inet6_skb_parm)));
 
-	err = icsk->icsk_af_ops->queue_xmit(sk, skb, &inet->cork.fl);
+		printk("pre\n");
 
-	if (likely(err <= 0))
-		return err;
+		err = icsk->icsk_af_ops->queue_xmit(sk, skb, &inet->cork.fl);
 
-	tcp_enter_cwr(sk);
+		printk("post\n");
 
-	return net_xmit_eval(err);
+		if (tp->repeat_ok && tp->repeat_n > 0) {
+			tp->repeat_i++;
+		}
+
+		if (unlikely(err > 0)) {
+			tp->repeat_i = tp->repeat_n = 0;
+
+			tcp_enter_cwr(sk);
+			return net_xmit_eval(err);
+		}
+
+	} while (tp->repeat_ok && tp->repeat_n > 0 && tp->repeat_i < tp->repeat_n);
+
+	tp->repeat_i = tp->repeat_n = 0;
+
+	return err;
 }
 
 /* This routine just queues the buffer for sending.

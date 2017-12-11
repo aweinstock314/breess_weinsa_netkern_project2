@@ -130,9 +130,12 @@ On the server side, how to get from request_sock to sock? request_sock.sk is nul
 Looks like this can just be done in tcp_conn_request
 
 On the client side, the SYNACK options are parsed within tcp_rcv_synsent_state_process.
-** TODO Modify tcp_established_options to support TCP_REPEAT
-Should be a simple job, just write 
+** DONE Modify tcp_established_options to support TCP_REPEAT
+CLOSED: [2017-12-11 Mon 14:19]
+Should be a simple job, just check repeat_i and repeat_n in the tcp_sock, almost identical to tcp_syn_options.
 ** TODO Modify tcp_transmit_skb to send n packets
 Make sure to check repeat_ok to make sure that the other side supports the option.
 Probably a do-while loop around most of the body of that function, after the skb is initialized.
 Will need to rewrite the options at least, may be easiest to rewrite the entire header.
+Currently at the point where it calls queue_xmit in a loop incrementing repeat_i.
+This doesn't actually send multiple packets, presumably because we're not modifying the skb at all between iterations.
