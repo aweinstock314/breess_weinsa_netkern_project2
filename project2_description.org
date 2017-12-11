@@ -87,7 +87,7 @@ If you had a test case that "broke things" you should be explicit about what the
 ** Full Project Submission to Submitty
 1. Full_report.pdf is the full report as described above. Do not put your name on the report.
 2. Full_patch.diff is your patch file for your full submission. Do not put your name in the code or EXTRAVERSION of the Makefile, but do pick an EXTRAVERSION that is unique with the same guidelines as the mid-report submission.
-3. Full_README should include a final division of labor (who did what, how much time everyone spent). Ideally, this division should be approximately equaul. It should also include any notes that you want the instructor to read that you wouldn't want a peer reviewer to read.
+3. Full_README should include a final division of labor (who did what, how much time everyone spent). Ideally, this division should be approximately equal. It should also include any notes that you want the instructor to read that you wouldn't want a peer reviewer to read.
 
 * Implementation notes
 ** DONE Define TCP option number in include/net/tcp.h

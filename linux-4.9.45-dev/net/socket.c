@@ -1687,9 +1687,14 @@ SYSCALL_DEFINE5(send_repeat, int, fd, void __user *, buff, size_t, len,
 	if (!sock)
 		goto out;
 	tp = tcp_sk(sock->sk);
-	tp->repeat_i = (u8) 1;
-	tp->repeat_n = (u8) n;
-	return sys_sendto(fd, buff, len, flags, NULL, 0);
+	if (tp->repeat_ok) {
+		tp->repeat_i = 1;
+		tp->repeat_n = n;
+		return sys_sendto(fd, buff, len, flags, NULL, 0);
+	} else {
+		printk("Remote does not support TCP_REPEAT, falling back to send.\n");
+		return sys_sendto(fd, buff, len, flags, NULL, 0);
+	}
 	
 out:
 	return err;
