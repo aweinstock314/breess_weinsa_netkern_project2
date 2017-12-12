@@ -3918,7 +3918,6 @@ static bool tcp_parse_aligned_timestamp(struct tcp_sock *tp, const struct tcphdr
 static bool tcp_fast_parse_options(const struct sk_buff *skb,
 				   const struct tcphdr *th, struct tcp_sock *tp)
 {
-	printk("FAST PARSE OPTIONS\n");
 	/* In the spirit of fast parsing, compare doff directly to constant
 	 * values.  Because equality is used, short doff can be ignored here.
 	 */
@@ -5626,8 +5625,6 @@ static bool tcp_rcv_fastopen_synack(struct sock *sk, struct sk_buff *synack,
 	u16 mss = tp->rx_opt.mss_clamp, try_exp = 0;
 	bool syn_drop = false;
 	
-	printk("FASTOPEN SYNACK\n");
-
 	if (mss == tp->rx_opt.user_mss) {
 		struct tcp_options_received opt;
 
@@ -5686,8 +5683,6 @@ static int tcp_rcv_synsent_state_process(struct sock *sk, struct sk_buff *skb,
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct tcp_fastopen_cookie foc = { .len = -1 };
 	int saved_clamp = tp->rx_opt.mss_clamp;
-
-	printk("SYNSENT STATE PROCESS\n");
 
 	tcp_parse_options(skb, &tp->rx_opt, 0, &foc);
 	if (tp->rx_opt.saw_tstamp && tp->rx_opt.rcv_tsecr)
@@ -6338,8 +6333,6 @@ int tcp_conn_request(struct request_sock_ops *rsk_ops,
 	struct request_sock *req;
 	bool want_cookie = false;
 	struct flowi fl;
-
-	printk("CONN REQUEST\n");
 
 	/* TW buckets are converted to open requests without
 	 * limitations, they conserve resources and peer is

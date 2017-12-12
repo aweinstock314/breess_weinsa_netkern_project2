@@ -139,3 +139,14 @@ Probably a do-while loop around most of the body of that function, after the skb
 Will need to rewrite the options at least, may be easiest to rewrite the entire header.
 Currently at the point where it calls queue_xmit in a loop incrementing repeat_i.
 This doesn't actually send multiple packets, presumably because we're not modifying the skb at all between iterations.
+
+Roadblock: How to get data length? Directly checking skb->data_len seems to always be zero.
+Incorrectly setting the sequence number seems to create an infinite (or just very long) loop of sends and receives.
+Maybe these are requests for retransmission due to incorrect bookkeeping?
+
+Got it working eventually, but now it looks like the next sequence number is only after the first packet.
+This is a bit strange given that we explicitly set snd_nxt.
+Searching for all usage of snd_nxt reveals tcp_event_new_data_sent, which might be the root of the problem.
+This function takes a sock and a skb and sets the snd_nxt to the skb's end_seq.
+This looks like exactly what we're looking for.
+For now, we'll add a simple hack to this function.

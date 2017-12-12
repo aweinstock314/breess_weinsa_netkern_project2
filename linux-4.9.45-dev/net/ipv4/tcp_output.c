@@ -73,7 +73,14 @@ static void tcp_event_new_data_sent(struct sock *sk, const struct sk_buff *skb)
 	unsigned int prior_packets = tp->packets_out;
 
 	tcp_advance_send_head(sk, skb);
-	tp->snd_nxt = TCP_SKB_CB(skb)->end_seq;
+
+	if (tp->repeat_ok && tp->repeat_i > 0 && tp->repeat_n > 0) {
+		printk("================== HERE ==================\n");
+		printk("will be at %u next\n", tp->snd_nxt);
+		tp->repeat_i = tp->repeat_n = 0;
+	} else {
+		tp->snd_nxt = TCP_SKB_CB(skb)->end_seq;
+	}
 
 	tp->packets_out += tcp_skb_pcount(skb);
 	if (!prior_packets || icsk->icsk_pending == ICSK_TIME_EARLY_RETRANS ||
@@ -947,7 +954,7 @@ out:
  * We are working here with either a clone of the original
  * SKB, or a fresh unique copy made by the retransmit engine.
  */
-static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
+static int tcp_transmit_skb(struct sock *sk, struct sk_buff *oskb, int clone_it,
 			    gfp_t gfp_mask)
 {
 	const struct inet_connection_sock *icsk = inet_csk(sk);
@@ -960,87 +967,104 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 	struct tcphdr *th;
 	int err;
 
-	BUG_ON(!skb || !tcp_skb_pcount(skb));
+	struct sk_buff *skb;
+
+	BUG_ON(!oskb || !tcp_skb_pcount(oskb));
 	tp = tcp_sk(sk);
-
-	if (clone_it) {
-		skb_mstamp_get(&skb->skb_mstamp);
-		TCP_SKB_CB(skb)->tx.in_flight = TCP_SKB_CB(skb)->end_seq
-			- tp->snd_una;
-		tcp_rate_skb_sent(sk, skb);
-
-		if (unlikely(skb_cloned(skb)))
-			skb = pskb_copy(skb, gfp_mask);
-		else
-			skb = skb_clone(skb, gfp_mask);
-		if (unlikely(!skb))
-			return -ENOBUFS;
-	}
-
 	inet = inet_sk(sk);
-	tcb = TCP_SKB_CB(skb);
-	memset(&opts, 0, sizeof(opts));
 
-	if (unlikely(tcb->tcp_flags & TCPHDR_SYN))
-		tcp_options_size = tcp_syn_options(sk, skb, &opts, &md5);
-	else
-		tcp_options_size = tcp_established_options(sk, skb, &opts,
-							   &md5);
-	tcp_header_size = tcp_options_size + sizeof(struct tcphdr);
+	skb_mstamp_get(&oskb->skb_mstamp);
+	TCP_SKB_CB(oskb)->tx.in_flight = TCP_SKB_CB(oskb)->end_seq - tp->snd_una;
+	tcp_rate_skb_sent(sk, oskb);
 
-	/* if no packet is in qdisc/device queue, then allow XPS to select
-	 * another queue. We can be called from tcp_tsq_handler()
-	 * which holds one reference to sk_wmem_alloc.
-	 *
-	 * TODO: Ideally, in-flight pure ACK packets should not matter here.
-	 * One way to get this would be to set skb->truesize = 2 on them.
-	 */
-	skb->ooo_okay = sk_wmem_alloc_get(sk) < SKB_TRUESIZE(1);
-
-	skb_push(skb, tcp_header_size);
-	skb_reset_transport_header(skb);
-
-	skb_orphan(skb);
-	skb->sk = sk;
-	skb->destructor = skb_is_tcp_pure_ack(skb) ? __sock_wfree : tcp_wfree;
-	skb_set_hash_from_sk(skb, sk);
-	atomic_add(skb->truesize, &sk->sk_wmem_alloc);
-
-	/* Build TCP header and checksum it. */
-	th = (struct tcphdr *)skb->data;
-	th->source		= inet->inet_sport;
-	th->dest		= inet->inet_dport;
-	th->seq			= htonl(tcb->seq);
-	th->ack_seq		= htonl(tp->rcv_nxt);
-	*(((__be16 *)th) + 6)	= htons(((tcp_header_size >> 2) << 12) |
-					tcb->tcp_flags);
-
-	th->check		= 0;
-	th->urg_ptr		= 0;
-
-	/* The urg_mode check is necessary during a below snd_una win probe */
-	if (unlikely(tcp_urg_mode(tp) && before(tcb->seq, tp->snd_up))) {
-		if (before(tp->snd_up, tcb->seq + 0x10000)) {
-			th->urg_ptr = htons(tp->snd_up - tcb->seq);
-			th->urg = 1;
-		} else if (after(tcb->seq + 0xFFFF, tp->snd_nxt)) {
-			th->urg_ptr = htons(0xFFFF);
-			th->urg = 1;
-		}
-	}
-	skb_shinfo(skb)->gso_type = sk->sk_gso_type;
-	if (likely(!(tcb->tcp_flags & TCPHDR_SYN))) {
-		th->window      = htons(tcp_select_window(sk));
-		tcp_ecn_send(sk, skb, th, tcp_header_size);
-	} else {
-		/* RFC1323: The window in SYN & SYN/ACK segments
-		 * is never scaled.
-		 */
-		th->window	= htons(min(tp->rcv_wnd, 65535U));
-	}
+	printk("oseq is %u, oend_seq is %u, len is %u\n", TCP_SKB_CB(oskb)->seq, TCP_SKB_CB(oskb)->end_seq, oskb->data_len);
 
 	do {
+		if (clone_it || (tp->repeat_ok && tp->repeat_i > 0 && tp->repeat_n > 0)) {
+			if (unlikely(skb_cloned(oskb)))
+				skb = pskb_copy(oskb, gfp_mask);
+			else
+				skb = skb_clone(oskb, gfp_mask);
+			if (unlikely(!skb))
+				return -ENOBUFS;
+		} else {
+			skb = oskb;
+		}
+
+		tcb = TCP_SKB_CB(skb);
+
+		memset(&opts, 0, sizeof(opts));
+
+		if (unlikely(tcb->tcp_flags & TCPHDR_SYN))
+			tcp_options_size = tcp_syn_options(sk, skb, &opts, &md5);
+		else
+			tcp_options_size = tcp_established_options(sk, skb, &opts,
+													   &md5);
+		tcp_header_size = tcp_options_size + sizeof(struct tcphdr);
+
+		/* if no packet is in qdisc/device queue, then allow XPS to select
+		 * another queue. We can be called from tcp_tsq_handler()
+		 * which holds one reference to sk_wmem_alloc.
+		 *
+		 * TODO: Ideally, in-flight pure ACK packets should not matter here.
+		 * One way to get this would be to set skb->truesize = 2 on them.
+		 */
+		skb->ooo_okay = sk_wmem_alloc_get(sk) < SKB_TRUESIZE(1);
+
+		skb_push(skb, tcp_header_size);
+		skb_reset_transport_header(skb);
+
+		skb_orphan(skb);
+		skb->sk = sk;
+		skb->destructor = skb_is_tcp_pure_ack(skb) ? __sock_wfree : tcp_wfree;
+		skb_set_hash_from_sk(skb, sk);
+		atomic_add(skb->truesize, &sk->sk_wmem_alloc);
+
+		/* Build TCP header and checksum it. */
+		th = (struct tcphdr *)skb->data;
+		th->source		= inet->inet_sport;
+		th->dest		= inet->inet_dport;
+		th->seq			= htonl(tcb->seq);
+		th->ack_seq		= htonl(tp->rcv_nxt);
+		*(((__be16 *)th) + 6)	= htons(((tcp_header_size >> 2) << 12) |
+										tcb->tcp_flags);
+
+		th->check		= 0;
+		th->urg_ptr		= 0;
+
+		/* The urg_mode check is necessary during a below snd_una win probe */
+		if (unlikely(tcp_urg_mode(tp) && before(tcb->seq, tp->snd_up))) {
+			if (before(tp->snd_up, tcb->seq + 0x10000)) {
+				th->urg_ptr = htons(tp->snd_up - tcb->seq);
+				th->urg = 1;
+			} else if (after(tcb->seq + 0xFFFF, tp->snd_nxt)) {
+				th->urg_ptr = htons(0xFFFF);
+				th->urg = 1;
+			}
+		}
+		skb_shinfo(skb)->gso_type = sk->sk_gso_type;
+		if (likely(!(tcb->tcp_flags & TCPHDR_SYN))) {
+			th->window      = htons(tcp_select_window(sk));
+			tcp_ecn_send(sk, skb, th, tcp_header_size);
+		} else {
+			/* RFC1323: The window in SYN & SYN/ACK segments
+			 * is never scaled.
+			 */
+			th->window	= htons(min(tp->rcv_wnd, 65535U));
+		}
+
+		if (tp->repeat_ok && tp->repeat_i > 0 && tp->repeat_n > 0) {
+			unsigned int len = tcb->end_seq - tcb->seq;
+			tcb->seq = tcb->seq + (len * (tp->repeat_i - 1));
+			tcb->end_seq = tcb->end_seq + (len * (tp->repeat_i - 1));
+			tp->snd_nxt = tcb->end_seq + 1;
+		}
+
 		tcp_options_write((__be32 *)(th + 1), tp, &opts);
+
+		if (tp->repeat_ok && tp->repeat_i > 0 && tp->repeat_n > 0) {
+			tp->repeat_i++;
+		}
 
 #ifdef CONFIG_TCP_MD5SIG
 		/* Calculate the MD5 hash, as we have all we need now */
@@ -1074,18 +1098,11 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 		skb->tstamp.tv64 = 0;
 
 		/* Cleanup our debris for IP stacks */
-		memset(skb->cb, 0, max(sizeof(struct inet_skb_parm),
-							   sizeof(struct inet6_skb_parm)));
+		/*memset(skb->cb, 0, max(sizeof(struct inet_skb_parm),
+		  sizeof(struct inet6_skb_parm)));*/
 
-		printk("pre\n");
-
+		printk("seq is %u, end_seq is %u, len is %u\n", TCP_SKB_CB(skb)->seq, TCP_SKB_CB(skb)->end_seq, skb->data_len);
 		err = icsk->icsk_af_ops->queue_xmit(sk, skb, &inet->cork.fl);
-
-		printk("post\n");
-
-		if (tp->repeat_ok && tp->repeat_n > 0) {
-			tp->repeat_i++;
-		}
 
 		if (unlikely(err > 0)) {
 			tp->repeat_i = tp->repeat_n = 0;
@@ -1093,10 +1110,10 @@ static int tcp_transmit_skb(struct sock *sk, struct sk_buff *skb, int clone_it,
 			tcp_enter_cwr(sk);
 			return net_xmit_eval(err);
 		}
+	} while (tp->repeat_ok && tp->repeat_n > 0 && tp->repeat_i <= tp->repeat_n);
 
-	} while (tp->repeat_ok && tp->repeat_n > 0 && tp->repeat_i < tp->repeat_n);
-
-	tp->repeat_i = tp->repeat_n = 0;
+	//tp->repeat_i = tp->repeat_n = 0;
+	printk("next is %u\n", tp->snd_nxt);
 
 	return err;
 }
@@ -2232,6 +2249,8 @@ static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 
 		if (tcp_small_queue_check(sk, skb, 0))
 			break;
+
+		printk("here next is %u\n", tp->snd_nxt);
 
 		if (unlikely(tcp_transmit_skb(sk, skb, 1, gfp)))
 			break;
