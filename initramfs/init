@@ -1,0 +1,23 @@
+#!/bin/sh
+
+echo 'Mounting /proc and /sys ...'
+mount -t proc none /proc
+mount -t sysfs none /sys
+echo 'Done!'
+
+echo 'Creating /dev/null ...'
+mknod /dev/null c 1 3
+chmod 666 /dev/null
+echo 'Done!'
+
+echo 'Bringing up network interface...'
+ifconfig lo 127.0.0.1
+hostname -F /etc/hostname
+udhcpc
+echo 'Done!'
+
+export CC='tcc -static -I/lib/tcc/include -D__DEFINED_va_list -D__isoc_va_list=va_list -D__DEFINED___isoc_va_list -I/include -L/lib -lc'
+
+/bin/sh
+
+poweroff -f
